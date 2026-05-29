@@ -1,9 +1,9 @@
 {
   "name": "commie-doge",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "title": "Commie Doge",
   "author": "xrisk",
   "factorio_version": "2.0",
-  "description": "Reskins the engineer as a comrade Shiba ('doge'): a full 8-direction animated waddle, a curled tail, a player-colored cap with a gold star and hammer & sickle, and a green toy water pistol when armed. The cap fill and chest take your chosen player color; the insignia stays gold. Data-only reskin, so enable only one character skin at a time.",
+  "description": "Reskins the engineer as a comrade Shiba ('doge'): a full 8-direction animated waddle, a curled tail, a player-colored cap with a gold star and hammer & sickle, a green toy water pistol when armed, and a gold hammer & sickle swung while mining -- now with cast shadows and directional aim while running and gunning. Optional doge-speak toasts narrate your factory ('much science. very five-year-plan. wow.'), toggleable per player in mod settings. The cap fill and chest take your chosen player color; the insignia stays gold. Overwrites the character, so enable only one character skin at a time.",
   "dependencies": ["base", "! penguin-character"]
 }

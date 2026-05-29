@@ -27,6 +27,12 @@ import math, os, subprocess, sys, tempfile
 HERE = os.path.dirname(os.path.abspath(__file__))
 GFX = os.path.normpath(os.path.join(HERE, "..", "commie-doge", "graphics"))
 
+# Real hammer & sickle (public-domain Wikimedia symbol, red keyed out -> gold silhouette).
+# Composited as a raster so it actually reads as a hammer & sickle; recolored variants live
+# in tools/assets/. See tools/assets/README for provenance.
+HS_GOLD = os.path.join(HERE, "assets", "hammer_sickle.png")       # gold (the mining tool)
+HS_DARK = os.path.join(HERE, "assets", "hammer_sickle_dark.png")  # dark-gold (over the gold cap star)
+
 FW, FH = 72, 92          # frame size (px), scale=0.5 in-game
 CX, CY = 36, 46          # frame center == body center
 KV = 0.55                # vertical foreshorten for the 3/4 camera
@@ -43,6 +49,9 @@ WHITE   = "rgb(248,248,248)"    # tint-mask core (kept near-white so team color 
 ORANGE  = "rgb(255,155,26)"     # pistol nozzle
 GREEN   = "rgb(60,214,92)"
 GREEN_D = "rgb(28,140,54)"
+OUTLINE = "rgb(54,36,22)"        # dark warm outer outline (baked by render_frame)
+WOOD    = "rgb(150,96,46)"       # hammer & sickle tool handle
+WOOD_D  = "rgb(96,58,28)"        # handle shadow
 
 def vec(theta):
     """screen facing unit vector; theta=0 -> north(away), +x=east, +y=toward viewer."""
@@ -79,6 +88,12 @@ def star(ops, color, cx, cy, R, outline=None, n=5, rot=-math.pi / 2):
         rad = R if i % 2 == 0 else R * 0.42
         pts.append((cx + math.cos(ang) * rad, cy + math.sin(ang) * rad))
     polygon(ops, color, pts, outline=outline, ow=0.4)
+
+def image_op(ops, path, cx, cy, w, h=None):
+    """Composite a raster asset (the hammer & sickle) centered at (cx,cy), scaled to w x h,
+    via an MVG `image` primitive -- so it draws inline with the rest of the layer's ops."""
+    h = h or w
+    ops.append(f"image Over {cx - w / 2:.2f},{cy - h / 2:.2f} {w:.2f},{h:.2f} '{path}'")
 
 # ---- shared layout (so body + chest-mask stay pixel-aligned) -----------------
 def layout(theta, phase, motion):
@@ -121,7 +136,7 @@ def inset_poly(pts, t=0.20):
     return [(x * (1 - t) + cx * t, y * (1 - t) + cy * t) for x, y in pts]
 
 # ---- body layer --------------------------------------------------------------
-def body_ops(theta, phase, motion, gun=False):
+def body_ops(theta, phase, motion, gun=False, tool=False):
     L = layout(theta, phase, motion)
     fx, fy = L["fx"], L["fy"]
     X0, Y0 = L["X0"], L["Y0"]
@@ -133,8 +148,8 @@ def body_ops(theta, phase, motion, gun=False):
     # paws (behind body; bottoms peek out below) -- two animated foot-blobs
     fa = L["foot"]
     fL, fR = math.sin(phase) * fa, math.sin(phase + math.pi) * fa
-    ellipse(ops, CREAM, X0 - 7 + fL * 2.2, 81 - max(0, fL) * 2.0, 5.0, 3.2)
-    ellipse(ops, CREAM, X0 + 7 + fR * 2.2, 81 - max(0, fR) * 2.0, 5.0, 3.2)
+    ellipse(ops, CREAM, X0 - 6.5 + fL * 2.2, 78 - max(0, fL) * 2.0, 4.7, 3.1)
+    ellipse(ops, CREAM, X0 + 6.5 + fR * 2.2, 78 - max(0, fR) * 2.0, 4.7, 3.1)
 
     # body (tan)
     ellipse(ops, FUR, X0, Y0, 18, 25)
@@ -164,16 +179,19 @@ def body_ops(theta, phase, motion, gun=False):
     # head (tan) on top of the body
     circle(ops, FUR, HCx, HCy, 11)
 
-    # ears (erect triangles); backs darker when facing away, cream inner when toward
+    # ears (erect Shiba triangles): broad base, slight outward tilt, darker backs
+    # when facing away, cream inner when toward. Chunky -- not antenna-thin.
     for sgn in (-1, 1):
-        ebx = HCx + perp[0] * 6.5 * sgn
-        eby = HCy - 6 + perp[1] * KV * 6.5 * sgn
-        tip = (ebx + perp[0] * 2 * sgn, eby - 13)
-        b1, b2 = (ebx - 4.0, eby + 2.5), (ebx + 4.0, eby + 2.5)
-        polygon(ops, FUR_D if fy < -0.1 else FUR, [tip, b1, b2])
-        if toward > -0.15:
-            itip = (ebx + perp[0] * 1.5 * sgn, eby - 8.5)
-            polygon(ops, CREAM, [itip, (ebx - 2.0, eby + 1.2), (ebx + 2.0, eby + 1.2)])
+        ox, oy = perp[0] * sgn, perp[1] * KV * sgn          # outward along the head
+        ebx = HCx + ox * 7.0
+        eby = HCy - 5.5 + oy * 7.0
+        tip   = (ebx + ox * 4.0, eby - 10.5)                # up and slightly outward
+        binr  = (ebx - ox * 4.2, eby + 2.6)                 # inner base (toward crown)
+        boutr = (ebx + ox * 5.2, eby + 1.8)                 # outer base
+        polygon(ops, FUR_D if fy < -0.1 else FUR, [tip, binr, boutr])
+        if toward > -0.15:                                  # cream inner ear
+            itip = (ebx + ox * 2.5, eby - 6.5)
+            polygon(ops, CREAM, [itip, (ebx - ox * 1.8, eby + 1.4), (ebx + ox * 2.6, eby + 1.0)])
 
     # stylized cap on the crown -- only a dark rim/brim is on the body layer; the
     # fill is the player color on the tint-mask layer. Drawn over the ears so the
@@ -182,14 +200,16 @@ def body_ops(theta, phase, motion, gun=False):
     polygon(ops, CAP_EDGE, brim)
     ellipse(ops, CAP_EDGE, *crown)
 
-    # muzzle (cream) + nose (black), front/3-4 only
+    # muzzle (cream) + nose + the smug doge smile, front/3-4 only
     vb = max(0.0, 0.5 + 0.5 * fy + 0.30 * abs(fx))
     if vb > 0.22:
-        m = min(1.1, max(0.45, vb))
-        mcx, mcy = HCx + fx * 4, HCy + fy * KV * 4 + 4
-        ellipse(ops, CREAM, mcx, mcy, 5.6 * m, 4.6 * m)
-        nx, ny = HCx + fx * 7, HCy + fy * KV * 7 + 4
-        circle(ops, NOSE, nx, ny, 2.3)
+        m = min(1.15, max(0.45, vb))
+        mcx, mcy = HCx + fx * 4, HCy + fy * KV * 4 + 4.5
+        ellipse(ops, CREAM, mcx, mcy, 6.6 * m, 5.4 * m)
+        nx, ny = HCx + fx * 6.5, HCy + fy * KV * 6.5 + 3.2
+        for s in (-1, 1):                                    # two arcs = doge mouth
+            arc(ops, NOSE, nx + s * 1.8, ny + 2.5, 2.0, 1.5, 22, 158, 0.8)
+        ellipse(ops, NOSE, nx, ny, 2.6, 2.2)                 # nose on top of the mouth
 
     # eyes (small, dark) + cream brow dots
     def eye(ex, ey):
@@ -216,6 +236,18 @@ def body_ops(theta, phase, motion, gun=False):
         capsule(ops, GREEN, HPx, HPy, bx1, by1, 5.5)             # barrel
         capsule(ops, GREEN, HPx, HPy, HPx, HPy + 6, 5.0)         # grip
         circle(ops, ORANGE, bx1, by1, 2.6)                       # nozzle
+
+    # hammer & sickle mining tool: the real emblem (raster asset), gripped and swung in a chop
+    if tool:
+        swing = 0.5 - 0.5 * math.cos(phase)                  # 0 raised -> 1 struck
+        ax, ay = X0 + fx * 6, Y0 + 2 + fy * KV * 5           # shoulder anchor
+        rdx, rdy = -fx * 4.0, -16.0                          # raised: up & back over the shoulder
+        sdx, sdy = fx * 15.0, fy * KV * 13.0 + 12.0          # struck: forward & into the ground
+        hcx = ax + rdx + (sdx - rdx) * swing                 # emblem center
+        hcy = ay + rdy + (sdy - rdy) * swing
+        hw = 20.0
+        capsule(ops, FUR, ax, ay, hcx, hcy + hw * 0.28, 5.0)  # foreleg/paw gripping the base
+        image_op(ops, HS_GOLD, hcx, hcy, hw)                  # the gold hammer & sickle itself
     return ops
 
 # ---- chest mask layer (team color) ------------------------------------------
@@ -233,11 +265,6 @@ def mask_ops(theta, phase, motion):
     return ops
 
 # ---- emblem layer (fixed gold; rendered ABOVE the tinted cap, never tinted) --
-def hammer_sickle(ops, color, cx, cy, s):
-    arc(ops, color, cx - s * 0.2, cy, s, s, 35, 320, 1.1)                       # sickle blade
-    capsule(ops, color, cx - s * 0.7, cy + s * 0.9, cx + s * 0.8, cy - s * 0.7, 1.1)  # hammer handle
-    capsule(ops, color, cx + s * 0.2, cy - s * 1.0, cx + s * 1.0, cy - s * 0.2, 1.1)  # hammer head
-
 def emblem_ops(theta, phase, motion):
     L = layout(theta, phase, motion)
     fx, fy, toward = L["fx"], L["fy"], L["toward"]
@@ -248,16 +275,38 @@ def emblem_ops(theta, phase, motion):
     ex = CCx + fx * 1.5
     ey = CCy + fy * KV * 1.5
     star(ops, GOLD, ex, ey, 4.2, outline=GOLD_D)            # big gold star (reads at game zoom)
-    hammer_sickle(ops, GOLD_D, ex, ey + 0.3, 1.7)          # hammer & sickle inside it (combined badge)
+    image_op(ops, HS_DARK, ex, ey + 0.3, 5.0)              # real hammer & sickle, dark-gold, on the star
     return ops
 
 # ---- rendering ---------------------------------------------------------------
-def render_frame(ops, path):
+def render_frame(ops, path, outline=False):
     cmd = ["magick", "-size", f"{FW}x{FH}", "xc:none"]
     if ops:                      # emblem frames are empty when facing away
         cmd += ["-draw", " ".join(ops)]
     cmd += ["-depth", "8", "PNG32:" + path]
     subprocess.run(cmd, check=True)
+    if outline and ops:          # bake a thin dark outer edge by dilating the silhouette
+        subprocess.run(["magick", path,
+                        "(", "+clone", "-channel", "A", "-morphology", "Dilate", "disk:2",
+                        "+channel", "-fill", OUTLINE, "-colorize", "100", ")",
+                        "+swap", "-compose", "over", "-composite",
+                        "-depth", "8", "PNG32:" + path], check=True)
+
+# Cast-shadow projection (Affine): anchor at the paws (36,80), keep the ground row fixed,
+# and lay the figure east + slightly up so it reads as a low-sun shadow like the rest of the
+# game. Baked into the SAME 72x92 frame as the body with the SAME shift, so it can never be
+# misaligned -- the trade vs vanilla's wider sheet is a shorter cast, which suits the cartoon.
+SHADOW_AFFINE = "36,80 36,80  46,80 46,80  36,8 62,70"
+
+def make_shadow(src, dst):
+    """Recolor a rendered silhouette to flat black (alpha kept) and project it to a shadow.
+    Output is hard-edged opaque black like vanilla's shadow sheets; draw_as_shadow makes the
+    engine render it translucent and time-of-day tinted."""
+    subprocess.run(["magick", src, "-fill", "black", "-colorize", "100",
+                    "-virtual-pixel", "none", "-background", "none",
+                    "-set", "option:distort:viewport", f"{FW}x{FH}+0+0",
+                    "-distort", "Affine", SHADOW_AFFINE,
+                    "-depth", "8", "PNG32:" + dst], check=True)
 
 def hcat(paths, out):
     subprocess.run(["magick"] + paths + ["+append", "PNG32:" + out], check=True)
@@ -265,13 +314,22 @@ def hcat(paths, out):
 def vcat(paths, out):
     subprocess.run(["magick"] + paths + ["-append", "PNG32:" + out], check=True)
 
-def build_sheet(out_path, dirs, frames, motion, gun=False, mask=False, emblem=False, south_only=False):
-    """rows = directions (0=N clockwise), cols = frames. south_only tiles the
-    south(front) pose across every direction (used for running_with_gun)."""
+def build_sheet(out_path, dirs, frames, motion, gun=False, tool=False, mask=False, emblem=False,
+                shadow=False, half_sweep=False, flip_sweep=False):
+    """rows = directions (0=N clockwise), cols = frames.
+
+    half_sweep is for the 18-direction running_with_gun: the engine expects those 18 rows
+    to cover gun aim swept N -> E -> S over the half-circle [0, pi] (the EAST hemisphere),
+    and it mirrors them horizontally for west-facing aim -- which is exactly the row order
+    the vanilla level1_running_gun sheet uses, and why base ships a *_shadow_flipped. So we
+    orient the dog (body + pistol) to theta = pi * d / (dirs - 1). Getting this order wrong
+    is what produces the infamous "moonwalk"; matching it gives vanilla-correct aiming."""
     tmp = tempfile.mkdtemp(prefix="dog_")
     rows = []
     for d in range(dirs):
-        theta = math.pi if south_only else (d / dirs) * 2 * math.pi
+        theta = (math.pi * d / (dirs - 1)) if half_sweep else (d / dirs) * 2 * math.pi
+        if flip_sweep:                       # west-aim half: the engine-mirrored shadow set
+            theta = -theta
         cols = []
         for f in range(frames):
             phase = (f / frames) * 2 * math.pi
@@ -280,9 +338,14 @@ def build_sheet(out_path, dirs, frames, motion, gun=False, mask=False, emblem=Fa
             elif emblem:
                 ops = emblem_ops(theta, phase, motion)
             else:
-                ops = body_ops(theta, phase, motion, gun=gun)
+                ops = body_ops(theta, phase, motion, gun=gun, tool=tool)
             fp = os.path.join(tmp, f"d{d}_f{f}.png")
-            render_frame(ops, fp)
+            if shadow:                       # silhouette -> projected cast shadow
+                raw = os.path.join(tmp, f"d{d}_f{f}_raw.png")
+                render_frame(ops, raw)
+                make_shadow(raw, fp)
+            else:
+                render_frame(ops, fp, outline=not (mask or emblem))
             cols.append(fp)
         rp = os.path.join(tmp, f"row{d}.png")
         hcat(cols, rp)
@@ -292,7 +355,7 @@ def build_sheet(out_path, dirs, frames, motion, gun=False, mask=False, emblem=Fa
                          capture_output=True, text=True).stdout
     print(f"  {os.path.basename(out_path)}: {dim}  (dirs={dirs} frames={frames})")
 
-# Animation specs: (frames, motion, gun, dirs, south_only)
+# Animation specs: (name, dirs, frames, motion, extra-kwargs-for-the-body-sheet)
 RUN_MOTION   = dict(sway=3.0, bob=1.6, foot=2.4)
 IDLE_MOTION  = dict(sway=0.6, bob=1.0, foot=0.4)
 MINE_MOTION  = dict(sway=0.8, bob=0.6, foot=0.4, lean=1.4)
@@ -304,29 +367,42 @@ def cmd_build():
     specs = [
         ("run",     8, 8, RUN_MOTION,  dict()),
         ("idle",    8, 4, IDLE_MOTION, dict()),
-        ("mine",    8, 6, MINE_MOTION, dict()),
+        ("mine",    8, 6, MINE_MOTION, dict(tool=True)),
         ("idlegun", 8, 4, IDLE_MOTION, dict(gun=True)),
-        ("rungun", 18, 8, RUN_MOTION,  dict(gun=True, south_only=True)),
+        ("rungun", 18, 8, RUN_MOTION,  dict(gun=True, half_sweep=True)),
     ]
     for name, dirs, frames, motion, extra in specs:
-        so = extra.get("south_only", False)
+        hs = extra.get("half_sweep", False)
         build_sheet(os.path.join(GFX, f"{name}.png"),        dirs, frames, motion, **extra)
-        build_sheet(os.path.join(GFX, f"{name}_mask.png"),   dirs, frames, motion, mask=True,   south_only=so)
-        build_sheet(os.path.join(GFX, f"{name}_emblem.png"), dirs, frames, motion, emblem=True, south_only=so)
+        build_sheet(os.path.join(GFX, f"{name}_mask.png"),   dirs, frames, motion, mask=True,   half_sweep=hs)
+        build_sheet(os.path.join(GFX, f"{name}_emblem.png"), dirs, frames, motion, emblem=True, half_sweep=hs)
+        build_sheet(os.path.join(GFX, f"{name}_shadow.png"), dirs, frames, motion, shadow=True, **extra)
+        if hs:   # running_with_gun: also the engine-mirrored (west-aim) shadow half
+            build_sheet(os.path.join(GFX, f"{name}_shadow_flipped.png"), dirs, frames, motion,
+                        shadow=True, flip_sweep=True, **extra)
     print("done.")
 
 # A sample player color for representative previews -- the cap & chest take this;
 # the gold star + hammer & sickle stay gold regardless.
 SAMPLE_TINT = "rgb(196,40,40)"
 
-def render_preview(theta, phase, motion, gun, path):
-    """body + sample-tinted mask + gold emblem, composited (preview only)."""
+def render_preview(theta, phase, motion, gun, path, tool=False, shadow=False):
+    """body + sample-tinted mask + gold emblem, composited (preview only). With shadow=True,
+    the cast shadow is laid under at reduced opacity to mimic how draw_as_shadow renders."""
     tmp = tempfile.mkdtemp(prefix="dog_pv_")
     b = os.path.join(tmp, "b.png"); m = os.path.join(tmp, "m.png"); e = os.path.join(tmp, "e.png")
-    render_frame(body_ops(theta, phase, motion, gun=gun), b)
+    render_frame(body_ops(theta, phase, motion, gun=gun, tool=tool), b, outline=True)
     render_frame(mask_ops(theta, phase, motion), m)
     render_frame(emblem_ops(theta, phase, motion), e)
-    subprocess.run(["magick", b,
+    base = ["-size", f"{FW}x{FH}", "xc:none"]
+    if shadow:
+        sraw = os.path.join(tmp, "sraw.png"); sh = os.path.join(tmp, "sh.png")
+        render_frame(body_ops(theta, phase, motion, gun=gun, tool=tool), sraw)
+        make_shadow(sraw, sh)
+        subprocess.run(["magick", sh, "-channel", "A", "-evaluate", "multiply", "0.42",
+                        "+channel", "PNG32:" + sh], check=True)
+        base = [sh]
+    subprocess.run(["magick"] + base + [b, "-compose", "over", "-composite",
                     "(", m, "-fill", SAMPLE_TINT, "-colorize", "100", ")", "-compose", "over", "-composite",
                     e, "-compose", "over", "-composite", "PNG32:" + path], check=True)
 
@@ -346,6 +422,54 @@ def cmd_contact():
                         "-alpha", "off", "-filter", "point", "-resize", "300%",
                         "PNG32:" + out], check=True)
         print("wrote", out, "(dirs: N NE E SE S SW W NW)")
+    # shadow preview: 8 directions with the cast shadow laid under (lighter ground)
+    cols = []
+    for d in range(8):
+        theta = (d / 8) * 2 * math.pi
+        fp = os.path.join(tmp, f"shadow_{d}.png")
+        render_preview(theta, 0.0, IDLE_MOTION, False, fp, shadow=True)
+        cols.append(fp)
+    subprocess.run(["magick"] + cols + ["+append", "-bordercolor", "gray70",
+                    "-border", "2", "-background", "gray58", "-alpha", "remove",
+                    "-alpha", "off", "-filter", "point", "-resize", "300%",
+                    "PNG32:/tmp/dog_contact_shadow.png"], check=True)
+    print("wrote /tmp/dog_contact_shadow.png (8 dirs with cast shadow)")
+    # running-with-gun aim sweep: 18 rows, theta = pi*d/17 (N -> E -> S, east hemisphere;
+    # engine mirrors for the west half). This is the row order the game expects.
+    cols = []
+    for d in range(18):
+        fp = os.path.join(tmp, f"rungun_{d}.png")
+        render_preview(math.pi * d / 17, 0.0, RUN_MOTION, True, fp)
+        cols.append(fp)
+    subprocess.run(["magick"] + cols + ["+append", "-bordercolor", "gray70",
+                    "-border", "2", "-background", "gray40", "-alpha", "remove",
+                    "-alpha", "off", "-filter", "point", "-resize", "200%",
+                    "PNG32:/tmp/dog_contact_rungun.png"], check=True)
+    print("wrote /tmp/dog_contact_rungun.png (rungun 18-dir aim sweep N->E->S)")
+    # mining row: 8 directions, hammer & sickle mid-swing
+    cols = []
+    for d in range(8):
+        theta = (d / 8) * 2 * math.pi
+        fp = os.path.join(tmp, f"mine_{d}.png")
+        render_preview(theta, math.pi * 0.62, MINE_MOTION, False, fp, tool=True)
+        cols.append(fp)
+    subprocess.run(["magick"] + cols + ["+append", "-bordercolor", "gray70",
+                    "-border", "2", "-background", "gray40", "-alpha", "remove",
+                    "-alpha", "off", "-filter", "point", "-resize", "300%",
+                    "PNG32:/tmp/dog_contact_mine.png"], check=True)
+    print("wrote /tmp/dog_contact_mine.png (mining, 8 dirs)")
+    # mining filmstrip: SE facing, 6 frames (the chop cycle)
+    cols = []
+    for f in range(6):
+        phase = (f / 6) * 2 * math.pi
+        fp = os.path.join(tmp, f"minefilm_{f}.png")
+        render_preview((3 / 8) * 2 * math.pi, phase, MINE_MOTION, False, fp, tool=True)
+        cols.append(fp)
+    subprocess.run(["magick"] + cols + ["+append", "-bordercolor", "gray70",
+                    "-border", "2", "-background", "gray40", "-alpha", "remove",
+                    "-alpha", "off", "-filter", "point", "-resize", "300%",
+                    "PNG32:/tmp/dog_contact_minefilm.png"], check=True)
+    print("wrote /tmp/dog_contact_minefilm.png (SE mining chop, 6 frames)")
     # waddle filmstrip: south, 8 frames
     cols = []
     for f in range(8):
