@@ -4,14 +4,16 @@ A [Factorio](https://factorio.com) mod that reskins the engineer as a comrade Sh
 
 ![Commie Doge — front, three-quarter, and back views in-game](media/commie-doge.png)
 
-Full 8-direction animated waddle, a curled tail, a player-colored cap with a gold star and hammer & sickle, and a green toy water pistol when armed. The cap fill and chest take your in-game player color; the gold insignia always stays gold.
+Full 8-direction animated waddle, a curled tail, a player-colored cap with a gold star and hammer & sickle, a green toy water pistol when armed, a gold hammer & sickle swung while mining, and projected cast shadows on every pose. The cap fill and chest take your in-game player color; the gold insignia always stays gold.
 
 ## Features
 
-- 8-direction animation for idle, running, and mining.
-- Directional water-pistol aiming when idle and armed.
-- Player-color cap + chest via a runtime-tint mask; fixed-gold star and hammer & sickle layered on top.
-- Parametrically generated art — no hand-pixeled sheets.
+- 8-direction animation for idle, running, and mining — and **directional aim while running and gunning** (an 18-direction sweep matching the vanilla row order), not just when standing still.
+- A real gold **hammer & sickle swung as the mining tool**, and a green toy water pistol when armed.
+- **Cast shadows** on every pose (`draw_as_shadow`, time-of-day tinted by the engine).
+- Player-color cap + chest via a runtime-tint mask; fixed-gold star + hammer & sickle layered on top.
+- Optional **doge-speak toasts** — the comrade narrates your factory in broken grammar (*"much science. very five-year-plan. wow."*) on research, rocket launches, combat, low health, mining/building, day↔night and more. Toggle it per player under **Settings → Mod settings → Per player**.
+- Parametrically generated art — no hand-pixeled sheets (the hammer & sickle is a public-domain Wikimedia symbol; see `tools/assets/`).
 
 ## Install
 
@@ -21,13 +23,12 @@ Full 8-direction animated waddle, a curled tail, a player-colored cap with a gol
 - Windows: `%APPDATA%\Factorio\mods\`
 - Linux: `~/.factorio/mods/`
 
-It's a data-only reskin of the character, so **enable only one character skin at a time** — the mod declares an incompatibility with other known character reskins so the launcher warns you.
+It reskins the character (a data-stage overwrite, plus a tiny cosmetic runtime script for the toasts), so **enable only one character skin at a time** — the mod declares an incompatibility with other known character reskins so the launcher warns you. Restart Factorio after enabling; it bakes sprites into a texture atlas at startup.
 
 ## Known limitations
 
-- No custom shadow.
 - All armor states (including power armor) render as the same Shiba.
-- Shoot-while-moving uses a single non-directional pistol pose: Factorio's 18-direction gun-walk mapping is buggy even in vanilla, so this avoids the "moonwalk" glitch at the cost of directionality in that one state. Directional aiming still works when standing still.
+- Running-and-gunning aims directionally via the 18-direction sweep that matches the vanilla row order; the mirrored half of *its* cast shadow is best-effort (the common poses' shadows are exact).
 
 ## Regenerating the art
 
