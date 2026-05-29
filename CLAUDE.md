@@ -48,6 +48,20 @@ green toy water pistol when armed.
   if the dog floats above / sinks into the ground.
 - Motion amplitudes: `RUN_MOTION` / `IDLE_MOTION` / `MINE_MOTION` dicts (sway/bob/foot/lean).
 
+## README media (`media/*.png`)
+- `commie-doge.png` (hero) is a **real in-game screenshot** (grass, the game's own shadow), so
+  the tool can't regenerate it. It was shot with a *purple* player color; the README wants red,
+  so the purple cap+chest are recolored in place by a hue-selective ImageMagick pass (see
+  `tools/recolor_hero.sh`): split HSL, mask = (hue band 165–215/255) AND (sat ≥ 25%), morphology
+  Open+Dilate, then inside the mask set hue→0, sat→168, **clamp lightness ≤47%** (so the light
+  lavender belly reads as solid red, not pink), recombine, and composite the masked region back
+  onto the untouched original (keeps grass/tan/gold byte-identical — no HSL round-trip noise).
+- `commie-doge-armed.png` is the green-pistol shot: armed frames from
+  `gen_commie_doge.render_preview(theta, 0, IDLE_MOTION, True, …)` (its `SAMPLE_TINT` is already
+  red) for dirs E/SE/S/SW/W, composited onto a seamless grass strip tiled from a swatch cropped
+  out of the hero (`magick media/commie-doge.png -crop 60x60+2+2`), with hand-drawn soft shadows.
+  Built by `tools/gen_media_armed.py`.
+
 ## History
 Spun out of the `dog-character` branch of the `penguin-mod` repo (which also has a penguin
 reskin). The two share the generator engine and both overwrite the character, hence the
